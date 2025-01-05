@@ -2,10 +2,14 @@
 
 namespace App\Http\Controllers;
 
-use App\models\User;
 use App\Helpers\ApiResponse;
+use App\models\Friend;
+use App\models\User;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class UserController extends Controller
 {
@@ -66,6 +70,83 @@ class UserController extends Controller
             );
         }
         return $this->apiResponse->success($user);
+    }
+
+    public function suggestFriend(Request $request)
+    {
+        $userId = Auth::id();
+        // List Fridend id
+        $listFriendId = DB::table('friends')
+            ->where('user_id', $userId)
+            ->select('friend_id')
+            ->pluck('friend_id')->toArray();
+        $listFriendId[] = $userId;
+        // List  suggest friend
+        $suggests = User::with([
+            'experiences' => function ($experienQuery) {
+                return $experienQuery->select('id', 'user_id', 'title')->get();
+            }
+        ])->whereNotIn('id', $listFriendId)
+            ->where('status', User::STATUS_ACTIVE)
+            ->select(
+                'id', 'name', 'avatar', 'created_at'
+            )->orderBy('created_at', 'ASC')
+            ->limit(config('constant.limit'))
+            ->get();
+        if (count($suggests) > 0) {
+            foreach($suggests as $user) {
+                $folderAvatar = null;
+                if (!is_null($user->avatar)) {
+                    $folderAvatar = explode('@', $user->email);
+                    $user->avatar = url(
+                        'avatars/' . $folderAvatar[0] . '/' . $user->avatar
+                    );
+                }
+                $txtExperience = '';
+                $i = 1;
+                foreach ($user->experiences as $experience) {
+                    if ($i < count($user->experiences)) {
+                        $txtExperience .= $experience->title . ', ';
+                    } else {
+                        $txtExperience .= $experience->title;
+                    }
+                    $i++;
+                }
+                $user->experience = $this->truncateString($txtExperience, 20);
+                unset($user->experiences);
+            }
+        }
+        return $this->apiResponse->success($suggests);
+    }
+
+    private function truncateString($string, $length, $append = '...')
+    {
+        if (mb_strlen($string) > $length) {
+            return mb_substr($string, 0, $length) . $append;
+        }
+        return $string;
+    }
+    /**
+     * 
+     */
+    public function addFriend(Request $request)
+    {
+        $param = $request->all();
+        try {
+            DB::beginTransaction();
+            $friend = new Friend();
+            $friend->user_id = Auth::id();
+            $friend->friend_id = $param['friend_id'];
+            $friend->approved = Friend::UN_APPROVED;
+            $friend->created_at = Carbon::now();
+            $friend->save();
+            DB::commit();
+            return $this->apiResponse->success();
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error($e->getMessage());
+            return $this->apiResponse->InternalServerError();
+        }
     }
 
     /**

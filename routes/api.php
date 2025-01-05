@@ -27,6 +27,8 @@ Route::group(['middleware' => 'auth:sanctum'],function () {
     Route::delete('/delete-user/{id}', [\App\Http\Controllers\APIController::class, 'deleteUser']);
 
     Route::get('/my-infor', [\App\Http\Controllers\UserController::class, 'show']);   
+    Route::get('/list-suggest-friend', [\App\Http\Controllers\UserController::class, 'suggestFriend']);   
+    Route::get('/add-friend', [\App\Http\Controllers\UserController::class, 'addFriend']);   
 });
 
 
